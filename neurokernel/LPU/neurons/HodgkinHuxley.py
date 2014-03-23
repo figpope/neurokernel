@@ -42,12 +42,12 @@ class HodgkinHuxley(BaseNeuron):
     #define NVAR 2
     #define NNEU %(nneu)d //NROW * NCOL
 
-    #define g_Na  = 120.0
-    #define g_K   = 36.0
-    #define g_L   = 0.3
-    #define E_K   = (-12.0)
-    #define E_Na  = 115.0
-    #define E_L   = 10.613
+    #define g_Na 120.0
+    #define g_K  36.0
+    #define g_L  0.3
+    #define E_K  (-12.0)
+    #define E_Na 115.0
+    #define E_L  10.613
 
     __global__ void
     hhn_model(int spk, int num_neurons, %(type)s* I_pre, %(type)s dt, int nsteps, \
