@@ -7,12 +7,13 @@ import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 
 class HodgkinHuxley(BaseNeuron):
-    def __init__(self, n_dict, spk, dt , debug=False):
+    def __init__(self, n_dict, spk, dt , debug=False, LPU_id=None):
 
         self.num_neurons = len(n_dict['id'])
         self.dt = np.double(dt)
         self.steps = max(int(round(dt / 1e-5)),1)
         self.debug = debug
+        self.LPU_id = LPU_id
 
         self.ddt = dt / self.steps
         
