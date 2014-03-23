@@ -65,21 +65,21 @@ class HodgkinHuxley(BaseNeuron):
 
             for(int i = 0; i < nsteps; ++i)
             {
-               a[0] = (10-V)/(100*(exp((10-V)/10)-1));
-               X_1[cart_id] = a[0]*dt - X_1[cart_id]*(dt*(a[0] + exp(-V/80)/8) - 1);
+                a[0] = (10-V)/(100*(exp((10-V)/10)-1));
+                X_1[cart_id] = a[0]*dt - X_1[cart_id]*(dt*(a[0] + exp(-V/80)/8) - 1);
                
-               a[1] = (25-V)/(10*(exp((25-V)/10)-1));
-               X_2[cart_id] = a[1]*dt - X_2[cart_id]*(dt*(a[1] + 4*exp(-V/18)) - 1);
+                a[1] = (25-V)/(10*(exp((25-V)/10)-1));
+                X_2[cart_id] = a[1]*dt - X_2[cart_id]*(dt*(a[1] + 4*exp(-V/18)) - 1);
                
-               a[2] = 0.07*exp(-V/20);
-               X_3[cart_id] = a[2]*dt - X_3[cart_id]*(dt*(a[2] + 1/(exp((30-V)/10)+1)) - 1);
+                a[2] = 0.07*exp(-V/20);
+                X_3[cart_id] = a[2]*dt - X_3[cart_id]*(dt*(a[2] + 1/(exp((30-V)/10)+1)) - 1);
 
-               V = V + dt*(I_pre[cart_id] - 
-                   (36.0*X_1[cart_id]^4*(V - E_K) + 
-                    g_Na*X_2[cart_id]^3*X_3[cart_id]*(V - E_Na) + 
+                V = V + dt*(I_pre[cart_id] - \
+                   (g_K*X_1[cart_id]^4*(V - E_K) + \
+                    g_Na*X_2[cart_id]^3*X_3[cart_id]*(V - E_Na) + \
                     g_L*(V - E_L)));
 
-               if(V_prev[cart_id] < V && g_V[cart_id] < V) {
+                if(V_prev[cart_id] < V && g_V[cart_id] < V) {
                     spk++;
                 }
                 
