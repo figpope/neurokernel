@@ -50,7 +50,7 @@ class HodgkinHuxley(BaseNeuron):
     #define E_L  10.613
 
     __global__ void
-    hhn_model(int spk, int num_neurons, %(type)s* I_pre, %(type)s dt, int nsteps, \
+    hhn_model(int *spk, int num_neurons, %(type)s* I_pre, %(type)s dt, int nsteps, \
               %(type)s* X_1, %(type)s* X_2, %(type)s* X_3, %(type)s* g_V, %(type)s* V_prev)
     {
         int bid = blockIdx.x;
