@@ -77,8 +77,8 @@ class HodgkinHuxley(BaseNeuron):
                X_2[cart_id] = a*dt - x*(dt*(a + 1/(exp((30-V)/10)+1)) - 1);
 
                V = V + dt*(I_pre[cart_id] - 
-                   (g_K*x[0]^4*(V - E_K) + 
-                    g_Na*x[1]^3*x[2]*(V - E_Na) + 
+                   (g_K*X_0[cart_id]^4*(V - E_K) + 
+                    g_Na*X_1[cart_id]^3*X_2[cart_id]*(V - E_Na) + 
                     g_L*(V - E_L)));
 
                if(V_prev[cart_id] < V && g_V[cart_id] < V) {
