@@ -59,7 +59,7 @@ class HodgkinHuxley(BaseNeuron):
         if(cart_id < num_neurons)
         {
             %(type)s V = g_V[cart_id];
-            spk = 0;
+            spk[cart_id] = 0;
 
             %(type)s a[3];
 
@@ -80,7 +80,7 @@ class HodgkinHuxley(BaseNeuron):
                     g_L * (V - E_L)));
 
                 if(V_prev[cart_id] < V && g_V[cart_id] < V) {
-                    spk++;
+                    spk[cart_id]++;
                 }
                 
                 V_prev[cart_id] = g_V[cart_id];
