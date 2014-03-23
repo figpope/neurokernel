@@ -56,12 +56,10 @@ class HodgkinHuxley(BaseNeuron):
         int bid = blockIdx.x;
         int cart_id = bid * NNEU + threadIdx.x;
 
-        %(type)s I, V;
-
         if(cart_id < num_neurons)
         {
             %(type)s V = g_V[cart_id];
-            spk[cart_id] = 0;
+            spk = 0;
 
             %(type)s a[3];
 
@@ -77,12 +75,12 @@ class HodgkinHuxley(BaseNeuron):
                X_3[cart_id] = a[2]*dt - X_3[cart_id]*(dt*(a[2] + 1/(exp((30-V)/10)+1)) - 1);
 
                V = V + dt*(I_pre[cart_id] - 
-                   (g_K*X_1[cart_id]^4*(V - E_K) + 
+                   (36.0*X_1[cart_id]^4*(V - E_K) + 
                     g_Na*X_2[cart_id]^3*X_3[cart_id]*(V - E_Na) + 
                     g_L*(V - E_L)));
 
                if(V_prev[cart_id] < V && g_V[cart_id] < V) {
-                    spk[cart_id]++;
+                    spk++;
                 }
                 
                 V_prev[cart_id] = g_V[cart_id];
