@@ -21,9 +21,9 @@ class HodgkinHuxley(BaseNeuron):
 
         self.V       = garray.to_gpu(np.asarray(n_dict['V'],      dtype=np.float64))
         self.V_prev  = garray.to_gpu(np.asarray(n_dict['V_prev'], dtype=np.float64))
-        self.X_1     = garray.to_gpu(np.asarray(n_dict['X1'],     dtype=np.float64))
-        self.X_2     = garray.to_gpu(np.asarray(n_dict['X2'],     dtype=np.float64))
-        self.X_3     = garray.to_gpu(np.asarray(n_dict['X3'],     dtype=np.float64))
+        self.X_1     = garray.to_gpu(np.asarray(n_dict['X_1'],     dtype=np.float64))
+        self.X_2     = garray.to_gpu(np.asarray(n_dict['X_2'],     dtype=np.float64))
+        self.X_3     = garray.to_gpu(np.asarray(n_dict['X_3'],     dtype=np.float64))
 
         self.update = self.get_kernel()
 
