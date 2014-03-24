@@ -22,17 +22,12 @@ class HodgkinHuxley(BaseNeuron):
         self.X_3     = garray.to_gpu(np.asarray(n_dict['X_3'],     dtype=np.float64))
         self.update = self.get_kernel()
     
-    def post_run(self):
-        print self.I
-        print self.V
-        print self.V_prev
-
     @property
     def neuron_class(self): return True
 
     def eval(self, st = None):
         self.update.prepared_async_call(self.update_grid, self.update_block, st, self.spk, 
-                                        self._num_neurons, self.I.gpudata, self.dt, 
+                                        self._num_neurons, self.I.gpudata, self.dt*1000, 
                                         self.X_1.gpudata, self.X_2.gpudata, self.X_3.gpudata, 
                                         self.V.gpudata, self.V_prev.gpudata)
 
