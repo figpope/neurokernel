@@ -79,7 +79,7 @@ class HodgkinHuxley(BaseNeuron):
                     g_Na * pow(X_2[cart_id], 3) * X_3[cart_id] * (V - E_Na) + \
                     g_L * (V - E_L)));
 
-                if(V_prev[cart_id] < V && g_V[cart_id] < V) {
+                if(V_prev[cart_id] < g_V[cart_id] && g_V[cart_id] > V) {
                     spk[cart_id]++;
                 }
                 
@@ -88,7 +88,7 @@ class HodgkinHuxley(BaseNeuron):
             }
         }
     }
-    """
+    """ # Used 27 registers, 112 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
