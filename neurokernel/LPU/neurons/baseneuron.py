@@ -82,7 +82,7 @@ class BaseNeuron(object):
                                                   dtype=np.int32))
         self._V_rev = garray.to_gpu(np.asarray(n_dict['reverse'],
                                                dtype=np.double))
-        self.I = garray.zeros(self.num_neurons, np.double)
+        self.I = garray.zeros(self._num_neurons, np.double)
         self._update_I_cond = self._get_update_I_cond_func()
         self._update_I_non_cond = self._get_update_I_non_cond_func()
         self.LPU_id = LPU_id
