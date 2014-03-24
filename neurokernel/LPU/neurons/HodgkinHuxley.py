@@ -83,7 +83,7 @@ class HodgkinHuxley(BaseNeuron):
             g_V[cart_id] = V;
         }
     }
-    """ # Used 27 registers, 112 bytes cmem[0], 56 bytes cmem[16]
+    """ # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
