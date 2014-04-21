@@ -5,7 +5,7 @@ import pycuda.gpuarray as garray
 from pycuda.tools import dtype_to_ctype
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
-from utils.curand import curand_setup
+from neurokernel.LPU.utils.curand import curand_setup
 
 NUM_MICROVILLI = 30000
 
