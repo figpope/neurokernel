@@ -1,5 +1,9 @@
 .idea
 build
 dist
+notebooks/*.h5
+notebooks/*.png
+notebooks/*.avi
+notebooks/*.gexf.gz
 *.pyc
 *.egg-info
