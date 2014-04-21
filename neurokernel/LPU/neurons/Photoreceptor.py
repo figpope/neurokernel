@@ -49,7 +49,7 @@ class Photoreceptor(BaseNeuron):
                                                    self.I.gpudata, self.V.gpudata)
 
     def get_hhn_kernel(self):
-    template = """
+        template = """
     #define NNEU %(nneu)d //NROW * NCOL
 
     #define E_K -85    // potassium reversal potential
