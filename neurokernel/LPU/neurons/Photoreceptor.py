@@ -93,24 +93,24 @@ class Photoreceptor(BaseNeuron):
         }
     }
     """#Used 40 registers, 1024+0 bytes smem, 84 bytes cmem[0], 308 bytes cmem[2], 28 bytes cmem[16]
-    dtype = np.double
-    scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
-    self.update_block = (128,1,1)
-    self.update_grid = ((self.num_neurons - 1) / 128 + 1, 1)
-    mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
-    func = mod.get_function("hhn_model")
+        dtype = np.double
+        scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
+        self.update_block = (128,1,1)
+        self.update_grid = ((self.num_neurons - 1) / 128 + 1, 1)
+        mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
+        func = mod.get_function("hhn_model")
 
-    func.prepare([np.intp, 
-                  np.intp,
-                  np.intp,
-                  np.intp,
-                  np.intp,
-                  np.intp,
-                  np.int32,
-                  np.intp,
-                  np.intp])
+        func.prepare([np.intp, 
+                      np.intp,
+                      np.intp,
+                      np.intp,
+                      np.intp,
+                      np.intp,
+                      np.int32,
+                      np.intp,
+                      np.intp])
 
-    return func
+        return func
 
     def get_microvilli_kernel(self):
         template = """
