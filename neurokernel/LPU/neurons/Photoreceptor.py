@@ -34,6 +34,8 @@ class Photoreceptor(BaseNeuron):
 
         self.state = curand_setup(self.num_neurons*NUM_MICROVILLI,100)
 
+        self.lambda = garray.to_gpu(np.asarray(np.zeros([30000, self.num_neurons], dtype=np.double)))
+
         self.update_microvilli = self.get_microvilli_kernel()
         self.update_hhn = self.get_hhn_kernel()
     
