@@ -5,5 +5,6 @@ notebooks/*.h5
 notebooks/*.png
 notebooks/*.avi
 notebooks/*.gexf.gz
+notebooks/.ipynb_checkpoints
 *.pyc
 *.egg-info
