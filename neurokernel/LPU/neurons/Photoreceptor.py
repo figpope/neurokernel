@@ -34,7 +34,7 @@ class Photoreceptor(BaseNeuron):
 
         self.state = curand_setup(self.num_neurons*NUM_MICROVILLI,100)
 
-        self.lambda = garray.to_gpu(np.asarray(np.zeros([30000, self.num_neurons], dtype=np.double)))
+        self.lam = garray.to_gpu(np.asarray(np.zeros([30000, self.num_neurons], dtype=np.double)))
 
         self.update_microvilli = self.get_microvilli_kernel()
         self.update_hhn = self.get_hhn_kernel()
@@ -44,7 +44,7 @@ class Photoreceptor(BaseNeuron):
 
     def eval(self, st = None):
         self.update_microvilli.prepared_async_call(self.update_grid, self.update_block, st,
-                                                   self.num_neurons, self.state.gpudata, self.lambda.gpudata,
+                                                   self.num_neurons, self.state.gpudata, self.lam.gpudata,
                                                    self.X.gpudata, self.Ca.gpudata, self.ddt*1000,
                                                    self.I.gpudata, self.V.gpudata)
 
