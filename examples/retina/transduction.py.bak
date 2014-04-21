@@ -1,0 +1,87 @@
+import pycuda.autoinit
+import pycuda.driver as drv
+from pycuda.compiler import SourceModule
+import numpy as np
+from absorption import absorption
+
+N_ph = 300
+photons = absorption(N_ph)
+print photons
+
+mod = SourceModule("""
+__global__ void transduction(int *dest, int *a)
+{
+    const float PLC_T = 100;
+    const float G_T = 50;
+    const float T_T = 25;
+    const float Ca = 160e-6;
+    const float CaM = 0.5;
+    const float gamma_m_star = 3.7;
+    const float h_m_star = 40;
+
+    const float kappa_g_star = 7.05;
+    const float kappa_plc_star = 15.6;
+    const float gamma_gap = 3;
+    const float gamma_g = 3.5;
+    const float kappa_d_star = 1300;
+    const float gamma_plc_star = 144;
+    const float h_plc_star = 11.1;
+
+    const float gamma_d_star = 4;
+    const float h_d_star = 37.8;
+
+    const float kappa_t_star = 150;
+    const float h_t_star_p = 11.5;
+
+    const float k_d_star = 1300;
+    const float gamma_t_star = 25;
+    const float h_t_star_n = 10;
+    const float K_mu = 30;
+    const float V = 3e-12;
+    const float K_R = 5.5;
+
+    const float K_P = 0.3;
+    const float K_N = 0.18;
+    const float m_p = 2;
+    const float m_n = 3;
+
+    const float n_s = 1;
+    const float K_Na_Ca = 3e-8;
+    const float Na_o = 120;
+    const float Na_i = 8;
+    const float Ca_o = 1.5;
+    const float Ca_id = 160e-6;
+    const float F = 96485;
+    const float V_m = -70e-3;
+    const float R = 8.314;
+    const float T = 293;
+
+    const float n = 4;
+    const float K_R = 5.5;
+    const float K_mu = 30;
+    const float K_Ca = 1000;
+
+    const float I_T_star = 0.68;
+    const float C_T = 0.5;
+    const float la = 0.5;
+
+    const int i = threadIdx.x;
+    dest[i] = a[i] + 1;
+}
+
+
+""", options = ["--ptxas-options=-v"])
+
+transduction = mod.get_function("transduction")
+testin = np.zeros((400,1),np.float)
+dest = np.zeros_like(testin)
+d = np.ones(2,np.int32)
+grid = (int(d[0]),int(d[1]))
+print grid
+
+transduction( drv.Out(dest), drv.In(testin),
+                    block=(400,1,1), grid=grid)
+
+print dest-testin
+
+
