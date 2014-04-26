@@ -1,6 +1,6 @@
 % First absorb photons
 time_step = 1000;
-N_ph = 600;
+N_ph = 1000;
 N_micro = 30000;
 lambdaM = N_ph/N_micro;
 k = 0;
