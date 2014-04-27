@@ -5,9 +5,9 @@ from pycuda.compiler import SourceModule
 import numpy as np
 from absorption import absorption
 
-N_ph = 300
+N_ph = 100
 photons = absorption(N_ph)
-print photons
+#print photons
 
 mod = SourceModule("""
 #include<stdio.h>
@@ -122,7 +122,7 @@ __device__ void find_T_ph(float* T_ph, int* final_T, float* N_ph){
   }
   printf("device final_T %d\\n", *final_T);
 }
-__global__ void transduction(float *dest, float *X_out, float *src, float* photons)
+__global__ void transduction(float *dest, float *X_out, float *src, float* photons, float* rand_array)
 {
   float Ca = 160e-6;
   float CaM = C_T;
@@ -164,9 +164,9 @@ __global__ void transduction(float *dest, float *X_out, float *src, float* photo
   float *T_ph = new float[1000];
   int final_T = 0;
   
-  for(int j=0;j<1000;j++){
-    printf("%f \\n",N_ph[j]);
-  }
+  //for(int j=0;j<1000;j++){
+  //  printf("%f \\n",N_ph[j]);
+  //}
   find_T_ph(T_ph, &final_T, N_ph);
   printf("final_T: %d\\n", final_T);
   for(int j=0;j<final_T;j++)
@@ -185,12 +185,15 @@ __global__ void transduction(float *dest, float *X_out, float *src, float* photo
   int step = 0;
 
   //choose X, a, h, 
-  char watching = 'a';
+  char watching = 'n';
 
   
   while(t < t_end){
-    r1 = 0.5;
-    r2 = 0.5;
+    //r1 = 0.5;
+    //r2 = 0.5;
+    r1 = rand_array[step*2];
+    r2 = rand_array[step*2+1];
+    //printf("%f \\n", rand_array[step]);
 
     for(int j = 0; j < 12; j++){
       a[j] = h[j]*c[j];
@@ -273,15 +276,17 @@ testin = np.zeros((100,1),np.float32)
 dest = np.zeros_like(testin)
 d = np.ones(2,np.int32)
 grid = (int(d[0]),int(d[1]))
-print grid
+#print grid
 photon_array = np.array(photons[:,0],np.float32)
-print photon_array
+#print photon_array
+rand_array = np.random.rand(100000);
+rand_array =  np.array(rand_array, np.float32)
 X_out = np.zeros((10000*7,1), np.float32)
-transduction( drv.Out(dest), drv.Out(X_out), drv.In(testin),drv.In(photon_array),
+transduction( drv.Out(dest), drv.Out(X_out), drv.In(testin),drv.In(photon_array),drv.In(rand_array),
                     block=(1,1,1), grid=grid)
 #print dest
 X_out = np.reshape(X_out, (10000,7))
-print X_out
+#print X_out
 
 
 
