@@ -47,11 +47,14 @@ class Photoreceptor(BaseNeuron):
     def neuron_class(self): return True
 
     def eval(self, st = None):
-      
-        self.update_microvilli.prepared_call(self.update_grid, self.update_block,
+        self.update_microvilli.prepared_async_call(self.update_grid, self.update_block, st,
                                              self.num_neurons, self.state.gpudata, self.lam.gpudata,
                                              self.X.gpudata, self.dt_micro.gpudata,
                                              self.I_micro.gpudata, self.V)
+        self.update_hhn.prepared_async_call(self.update_grid, self.update_block, st,
+                                            self.V, self.sa, self.si, self.dra, self.dri,
+                                            self.num_neurons, self.I_micro.gpudata, self.I.gpudata, 
+                                            self.ddt*1000)
 
     def get_hhn_kernel(self):
         template = """
@@ -64,14 +67,21 @@ class Photoreceptor(BaseNeuron):
     #define G_Cl 0.056 // chloride leak conductance
     #define G_K 0.082  // potassium leak conductance
     #define C 4        // membrane capacitance
+    #define m_V 1.57e-5  // membrane volume
 
     __global__ void
     hhn_model(%(type)s* V, %(type)s* sa, %(type)s* si, %(type)s* dra, %(type)s* dri, \
-                       int num_neurons, %(type)s* I_pre, %(type)s dt) {
+                       int num_neurons, %(type)s* I_micro, %(type)s I, %(type)s dt) {
         int bid = blockIdx.x;
         int cart_id = bid * NNEU + threadIdx.x;
 
         if(cart_id < num_neurons) {
+            I[cart_id] = 0
+            for(int i = 0; i < NUM_MICROVILLI; i++) {
+              I[cart_id] += I_micro[cart_id][i];
+            }
+            I_pre = I[cart_id] / m_V;
+
             // computing voltage gated time constants and steady-state
             // activation/inactivation functions
             float sa_inf = powf(1 / (1 + expf((-30 - V[cart_id]) / 13.5)), 1/3);
@@ -88,11 +98,11 @@ class Photoreceptor(BaseNeuron):
             float dsi = (si_inf - si[cart_id])/tau_si;
             float ddra = (dra_inf - dra[cart_id])/tau_dra;
             float ddri = (dri_inf - dri[cart_id])/tau_dri;
-            float dV = (I_pre[cart_id] - G_K * (V[cart_id] - E_K) \
-                                       - G_Cl * (V[cart_id] - E_Cl) \
-                                       - G_s * sa[cart_id] * si[cart_id] * (V[cart_id] - E_K) \
-                                       - G_dr * dra[cart_id] * dri[cart_id] * (V[cart_id] - E_K) \
-                                       - 0.093 * (V[cart_id] - 10)) \
+            float dV = (I_pre - G_K * (V[cart_id] - E_K) \
+                              - G_Cl * (V[cart_id] - E_Cl) \
+                              - G_s * sa[cart_id] * si[cart_id] * (V[cart_id] - E_K) \
+                              - G_dr * dra[cart_id] * dri[cart_id] * (V[cart_id] - E_K) \
+                              - 0.093 * (V[cart_id] - 10)) \
                         / C;
 
             V[cart_id]   += dt*dV;
@@ -212,7 +222,7 @@ class Photoreceptor(BaseNeuron):
         }
     
         __device__ float calc_f1() {
-          return K_Na_Ca * (powf(Na_i, 3)*Ca_o) / (V*F);
+          return K_Na_Ca * (powf(Na_i, 3)*Ca_o) / F;
         }
     
         __device__ float calc_f2(float V_m) {
@@ -266,7 +276,7 @@ class Photoreceptor(BaseNeuron):
               gamma_d_star*(1+h_d_star*f_n),
               kappa_t_star*(1+h_t_star_p*f_p)/(powf(k_d_star,2)),
               gamma_t_star*(1+h_t_star_n*f_n),
-              K_mu/powf(V,2),
+              K_mu,
               K_R
             };
     
