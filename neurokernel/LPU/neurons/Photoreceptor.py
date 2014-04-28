@@ -28,13 +28,15 @@ class Photoreceptor(BaseNeuron):
 
         X_init = [0,50,0,0,0,0,0]
         self.X = garray.to_gpu(np.asarray([[X_init for i in range(NUM_MICROVILLI)] for neuron in range(self.num_neurons)], dtype=np.int))
-        self.Ca = garray.to_gpu(np.asarray([[0 for i in range(NUM_MICROVILLI)] for neuron in range(self.num_neurons)], dtype=np.float64))
+        self.Ca = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
+        self.I_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
+        self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
 
         cuda.memcpy_htod(int(self.V), np.asarray(n_dict['initV'], dtype=np.double))
 
         self.state = curand_setup(self.num_neurons*NUM_MICROVILLI,100)
 
-        self.lam = garray.to_gpu(np.asarray(np.zeros([30000, self.num_neurons], dtype=np.double)))
+        self.lam = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
 
         self.update_microvilli = self.get_microvilli_kernel()
         self.update_hhn = self.get_hhn_kernel()
@@ -43,10 +45,11 @@ class Photoreceptor(BaseNeuron):
     def neuron_class(self): return True
 
     def eval(self, st = None):
+      while()
         self.update_microvilli.prepared_async_call(self.update_grid, self.update_block, st,
                                                    self.num_neurons, self.state.gpudata, self.lam.gpudata,
-                                                   self.X.gpudata, self.Ca.gpudata, self.ddt*1000,
-                                                   self.I.gpudata, self.V.gpudata)
+                                                   self.X.gpudata, self.Ca.gpudata, self.dt_micro.gpudata,
+                                                   self.I_micro.gpudata, self.V.gpudata)
 
     def get_hhn_kernel(self):
         template = """
@@ -142,7 +145,7 @@ class Photoreceptor(BaseNeuron):
 
     #define k_d_star 1300
     #define K_mu 30
-    #define V 3e-12
+    #define V 3e-9
     #define K_R 5.5
     #define K_P 0.3
     #define K_N 0.18
@@ -160,12 +163,12 @@ class Photoreceptor(BaseNeuron):
     #define n 4
     #define K_Ca 1000
     #define I_T_star 0.68
-    #define C_T 0.5
+    #define C_T 903.45
 
     #define avo 6.023e23
-    #define NUM_MICROVILLI 30000
+    #define NUM_MICROVILLI %(num_micro)s
 
-    #define la = 0.5
+    #define la 0.5
 
     __constant__ int V_state_transition[7][12] = {
       {-1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
@@ -192,7 +195,7 @@ class Photoreceptor(BaseNeuron):
       h[11] = X[5];
     }
 
-    __device__ float calc_f_p(float Ca, float K_P, float m_p){
+    __device__ float calc_f_p(float Ca){
       return powf(Ca/K_P, m_p)/(1+powf(Ca/K_P, m_p));
     }
 
@@ -200,16 +203,16 @@ class Photoreceptor(BaseNeuron):
       return n_s*powf(C_star/K_N, m_n)/(1+powf(C_star/K_N, m_n));
     }
 
-    __device__ float calc_f1(float Na_i, float Ca_o) {
+    __device__ float calc_f1() {
       return K_Na_Ca * (powf(Na_i, 3)*Ca_o) / (V*F);
     }
 
-    __device__ float calc_f2(float V_m, float Na_o) {
+    __device__ float calc_f2(float V_m) {
       return K_Na_Ca * exp(-V_m*F/(R*T))*powf(Na_o,3) / (V*F);
     }
 
     __device__ float calc_Ca(float C_star, float CaM, float I_Ca, float V_m) {
-      return V * (I_Ca/(2*V*F) + n*K_R*C_star - calc_f1(Na_i, Ca_o)) / (n*K_mu*CaM + K_Ca - calc_f2(V_m, Na_o));
+      return V * (I_Ca/(2*V*F) + n*K_R*C_star + calc_f1()) / (n*K_mu*CaM + K_Ca + calc_f2(V_m));
     }
 
     __device__ void cumsum(float* out, float* a){
@@ -220,7 +223,7 @@ class Photoreceptor(BaseNeuron):
     }
 
     __global__ void transduction(int num_neurons, curandStateXORWOW_t *state, %(type)s* lambda, \
-                                 %(type)s* X, %(type)s* Ca, %(type)s* dt, %(type)s* I, %(type)s* V_m)
+                                 %(type)s* X, %(type)s* Ca, %(type)s* dt_micro, %(type)s* I_micro, %(type)s* V_m)
     {
       int tid = blockIdx.x * NNEU + threadIdx.x;
       int mid = tid % num_microvilli;
@@ -228,19 +231,20 @@ class Photoreceptor(BaseNeuron):
       
       if(nid < num_neurons * num_microvilli) {
         X[nid][mid][0] += curand_poisson(&state[tid], lambda)
-        float a[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
+        
+        float C_star_conc = X[5]/avo*1e3/(V*1e-9);
+        float CaM_conc = (C_T - X[tid][mid][5])/avo*1e3/(V*1e-9);
 
-        C_star = (X[5]/avo)/(V*powf(10,-3));
-        CaM = C_T - C_star;
+        Ca[tid][mid] = calc_Ca(C_star_conc, CaM_conc, I_Ca, V_m[tid]);
         
         float h[12];
-        compute_h(&h, X[nid][mid], Ca[nid][tid], CaM);
+        compute_h(&h, X[nid][mid], Ca[nid][tid], CaM_conc);
 
         float r1 = curand_uniform(&state[tid]);
         float r2 = curand_uniform(&state[tid]);
         
         float f_p = calc_f_p(Ca);
-        float f_n = calc_f_n(C_star);
+        float f_n = calc_f_n(C_star_conc);
         float c[12] = {
           gamma_m_star*(1+h_m_star*f_n),
           kappa_g_star,
@@ -256,20 +260,20 @@ class Photoreceptor(BaseNeuron):
           K_R
         };
 
-        float a_mu[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
-        
-        int found = 0;
-
+        float a[12];
         for(int j = 0; j < 12; j++){
           a[j] = h[j]*c[j];
         }
 
+        float a_mu[12];
         cumsum(a_mu, a);
+        
         a_s = a_mu[11];
 
-        dt = 1/(la+a_s)*logf(1/r1);
+        dt_micro[tid][mid] = 1/(la+a_s)*logf(1/r1);
         
         float propensity = r2*a_s;
+        int found = 0;
         for(int j = 0; j < 12; j++){
           if(a_mu[j] >= propensity && a_mu[j] != 0){
             if(j == 1) {
@@ -286,14 +290,8 @@ class Photoreceptor(BaseNeuron):
           }
         }
 
-        I[nid] = I_T_star*X[tid][mid][6];
-        float I_Ca = 0.4*I;
-
-        // update C_star
-        C_star = (X[5]/avo)/(V*powf(10,-3));
-        CaM = C_T - C_star;
-
-        Ca[tid][mid] = calc_Ca(C_star, CaM, I_Ca, V_m[tid]);
+        I_micro[tid][mid] = I_T_star*X[tid][mid][6];
+        float I_Ca = 0.4*I_micro[tid][mid];
       }
     }
     """ # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
@@ -301,7 +299,7 @@ class Photoreceptor(BaseNeuron):
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
         self.update_grid = ((self._num_neurons - 1) / 128 + 1, 1)
-        mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
+        mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0], "num_micro": NUM_MICROVILLI}, options=["--ptxas-options=-v"])
         func = mod.get_function("transduction")
 
         func.prepare([np.int,     # num_neurons
