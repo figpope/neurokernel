@@ -30,15 +30,15 @@ class Photoreceptor(BaseNeuron):
 
         X_init = [0,50,0,0,0,0,0]
         self.X = garray.to_gpu(np.asarray([[X_init for i in range(NUM_MICROVILLI)] for neuron in range(self.num_neurons)], dtype=np.int))
-        self.Ca = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
-        self.I_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
-        self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
+        self.Ca = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
+        self.I_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
+        self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
 
         cuda.memcpy_htod(int(self.V), np.asarray(n_dict['initV'], dtype=np.double))
 
         self.state = curand_setup(self.num_neurons*NUM_MICROVILLI,100)
 
-        self.lam = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
+        self.lam = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
 
         self.update_microvilli = self.get_microvilli_kernel()
         self.update_hhn = self.get_hhn_kernel()
@@ -318,7 +318,7 @@ class Photoreceptor(BaseNeuron):
           }
         }
     }
-    """ # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
+    """) # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
