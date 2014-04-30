@@ -7,6 +7,8 @@ import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 from neurokernel.LPU.utils.curand import curand_setup
 
+from jinja2 import Template
+
 NUM_MICROVILLI = 30000
 
 class Photoreceptor(BaseNeuron):
@@ -28,13 +30,15 @@ class Photoreceptor(BaseNeuron):
 
         X_init = [0,50,0,0,0,0,0]
         self.X = garray.to_gpu(np.asarray([[X_init for i in range(NUM_MICROVILLI)] for neuron in range(self.num_neurons)], dtype=np.int))
-        self.Ca = garray.to_gpu(np.asarray([[0 for i in range(NUM_MICROVILLI)] for neuron in range(self.num_neurons)], dtype=np.float64))
+        self.Ca = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
+        self.I_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
+        self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
 
         cuda.memcpy_htod(int(self.V), np.asarray(n_dict['initV'], dtype=np.double))
 
         self.state = curand_setup(self.num_neurons*NUM_MICROVILLI,100)
 
-        self.lam = garray.to_gpu(np.asarray(np.zeros([30000, self.num_neurons], dtype=np.double)))
+        self.lam = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float64)))
 
         self.update_microvilli = self.get_microvilli_kernel()
         self.update_hhn = self.get_hhn_kernel()
@@ -43,17 +47,18 @@ class Photoreceptor(BaseNeuron):
     def neuron_class(self): return True
 
     def eval(self, st = None):
-        self.update_microvilli.prepared_async_call(self.update_grid, self.update_block, st,
-                                                   self.num_neurons, self.state.gpudata, self.lam.gpudata,
-                                                   self.X.gpudata, self.Ca.gpudata, self.ddt*1000,
-                                                   self.I.gpudata, self.V.gpudata)
+      
+        self.update_microvilli.prepared_call(self.update_grid, self.update_block,
+                                             self.num_neurons, self.state.gpudata, self.lam.gpudata,
+                                             self.X.gpudata, self.dt_micro.gpudata,
+                                             self.I_micro.gpudata, self.V)
 
     def get_hhn_kernel(self):
         template = """
     #define NNEU %(nneu)d //NROW * NCOL
 
-    #define E_K -85    // potassium reversal potential
-    #define E_Cl -30   // chloride reversal potential
+    #define E_K (-85)    // potassium reversal potential
+    #define E_Cl (-30)   // chloride reversal potential
     #define G_s 1.6    // maximum shaker conductance
     #define G_dr 3.5   // maximum delayed rectifier conductance
     #define G_Cl 0.056 // chloride leak conductance
@@ -61,7 +66,7 @@ class Photoreceptor(BaseNeuron):
     #define C 4        // membrane capacitance
 
     __global__ void
-    hhn_model(%(type)s* V, %(type)s* sa, %(type)s* si, %(type)s* dra, %(type)s* dri, \ 
+    hhn_model(%(type)s* V, %(type)s* sa, %(type)s* si, %(type)s* dra, %(type)s* dri, \
                        int num_neurons, %(type)s* I_pre, %(type)s dt) {
         int bid = blockIdx.x;
         int cart_id = bid * NNEU + threadIdx.x;
@@ -69,30 +74,35 @@ class Photoreceptor(BaseNeuron):
         if(cart_id < num_neurons) {
             // computing voltage gated time constants and steady-state
             // activation/inactivation functions
-            sa_inf = (1./(1+exp((-30-V)/13.5))).^(1/3);
-            tau_sa = 0.13+3.39*exp(-(-73-V).^2./20^2);
-            si_inf = 1./(1+exp((-55-V)/-5.5));
-            tau_si = 113*exp(-(-71-V).^2./29^2);
-            dra_inf = (1./(1+exp((-5-V)/9))).^(1/2);
-            tau_dra = 0.5+5.75*exp(-(-25-V).^2./32^2);
-            dri_inf = 1./(1+exp((-25-V)/-10.5));
-            tau_dri = 890;
+            float sa_inf = powf(1 / (1 + expf((-30 - V[cart_id]) / 13.5)), 1/3);
+            float tau_sa = 0.13 + 3.39 * exp(powf(-(-73 - V[cart_id]), 2) / 400);
+            float si_inf = 1 / (1 + expf((-55 - V[cart_id]) / -5.5));
+            float tau_si = powf(113 * expf(-(-71 - V[cart_id])), 2) / 841;
+            float dra_inf = powf(1 / (1 + expf((-5 - V[cart_id]) / 9)), 1/2);
+            float tau_dra = 0.5 + 5.75 * exp(powf(-(-25 - V[cart_id]), 2) / 1024);
+            float dri_inf = 1 / (1 + expf((-25 - V[cart_id]) / -10.5));
+            float tau_dri = 890;
 
             // compute derivatives
-            dsa = (sa_inf - sa[cart_id])./tau_sa;
-            dsi = (si_inf - si[cart_id])./tau_si;
-            ddra = (dra_inf - dra[cart_id])./tau_dra;
-            ddri = (dri_inf - dri[cart_id])./tau_dri;
-            dV = (I_pre[cart_id] - G_K*(V[cart_id]-E_K) - G_Cl * (V[cart_id]-E_Cl) - G_s * sa * si * (V[cart_id]-E_K) - G_dr * dra * dri * (V[cart_id]-E_K) - 0.093*(V[cart_id]-10) )/C;
+            float dsa = (sa_inf - sa[cart_id])/tau_sa;
+            float dsi = (si_inf - si[cart_id])/tau_si;
+            float ddra = (dra_inf - dra[cart_id])/tau_dra;
+            float ddri = (dri_inf - dri[cart_id])/tau_dri;
+            float dV = (I_pre[cart_id] - G_K * (V[cart_id] - E_K) \
+                                       - G_Cl * (V[cart_id] - E_Cl) \
+                                       - G_s * sa[cart_id] * si[cart_id] * (V[cart_id] - E_K) \
+                                       - G_dr * dra[cart_id] * dri[cart_id] * (V[cart_id] - E_K) \
+                                       - 0.093 * (V[cart_id] - 10)) \
+                        / C;
 
-            V   += dt*dV;
-            sa  += dt*sa;
-            si  += dt*si;
-            dra += dt*ddra;
-            dri += dt*ddri;
+            V[cart_id]   += dt*dV;
+            sa[cart_id]  += dt*dsa;
+            si[cart_id]  += dt*dsi;
+            dra[cart_id] += dt*ddra;
+            dri[cart_id] += dt*ddri;
         }
     }
-    """#Used 40 registers, 1024+0 bytes smem, 84 bytes cmem[0], 308 bytes cmem[2], 28 bytes cmem[16]
+    """# Used 41 registers, 96 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
@@ -100,215 +110,216 @@ class Photoreceptor(BaseNeuron):
         mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
         func = mod.get_function("hhn_model")
 
-        func.prepare([np.intp, 
-                      np.intp,
-                      np.intp,
-                      np.intp,
-                      np.intp,
-                      np.intp,
-                      np.int32,
-                      np.intp,
-                      np.intp])
+        func.prepare([np.intp,   # V
+                      np.intp,   # Sa
+                      np.intp,   # Si
+                      np.intp,   # Dra
+                      np.intp,   # Dri
+                      np.int32,  # num_neurons
+                      np.intp,   # I_pre
+                      np.intp])  # dt
 
         return func
 
     def get_microvilli_kernel(self):
-        template = """
-    #include<stdio.h>
-
-    #define NNEU %(nneu)d //NROW * NCOL
-
-    #define PLC_T 100
-    #define G_T 50
-    #define T_T 25
-
-    #define kappa_g_star 7.05
-    #define kappa_plc_star 15.6
-    #define kappa_d_star 1300
-    #define kappa_t_star 150
-
-    #define gamma_gap 3
-    #define gamma_g 3.5
-    #define gamma_plc_star 144
-    #define gamma_m_star 3.7
-    #define gamma_d_star 4
-    #define gamma_t_star 25
-
-    #define h_plc_star 11.1
-    #define h_d_star 37.8
-    #define h_t_star_p 11.5
-    #define h_t_star_n 10
-    #define h_m_star 40
-
-    #define k_d_star 1300
-    #define K_mu 30
-    #define V 3e-12
-    #define K_R 5.5
-    #define K_P 0.3
-    #define K_N 0.18
-    #define m_p 2
-    #define m_n 3
-    #define n_s 1
-    #define K_Na_Ca 3e-8
-    #define Na_o 120
-    #define Na_i 8
-    #define Ca_o 1.5
-    #define Ca_id 160e-6
-    #define F 96485
-    #define R 8.314
-    #define T 293
-    #define n 4
-    #define K_Ca 1000
-    #define I_T_star 0.68
-    #define C_T 0.5
-
-    #define avo 6.023e23
-    #define NUM_MICROVILLI 30000
-
-    #define la = 0.5
-
-    __constant__ int V_state_transition[7][12] = {
-      {-1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
-      { 0, -1,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0},
-      { 0,  1, -1, -1,  0,  0,  0,  0,  0,  0,  0,  0},
-      { 0,  0,  1,  0,  0,  0, -1,  0,  0,  0,  0,  0},
-      { 0,  0,  0,  0,  0,  1,  0, -1, -2,  0,  0,  0},
-      { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1, -1},
-      { 0,  0,  0,  0,  0,  0,  0,  0,  1, -1,  0,  0}
-    };
-
-    __device__ void compute_h(float* h, float* X, float Ca, float CaM){
-      h[0] = X[0];
-      h[1] = X[0]*X[1];                             
-      h[2] = X[2]*(PLC_T-X[3]);                    
-      h[3] = X[2]*X[3];                             
-      h[4] = G_T-X[2]-X[1]-X[3];                    
-      h[5] = X[3];                                  
-      h[6] = X[3];                                 
-      h[7] = X[4];                                  
-      h[8] = X[4]*(X[4]-1)*(T_T-X[6])/2;           
-      h[9] = X[6];                  
-      h[10] = Ca*CaM;
-      h[11] = X[5];
-    }
-
-    __device__ float calc_f_p(float Ca, float K_P, float m_p){
-      return powf(Ca/K_P, m_p)/(1+powf(Ca/K_P, m_p));
-    }
-
-    __device__ float calc_f_n(float C_star){
-      return n_s*powf(C_star/K_N, m_n)/(1+powf(C_star/K_N, m_n));
-    }
-
-    __device__ float calc_f1(float Na_i, float Ca_o) {
-      return K_Na_Ca * (powf(Na_i, 3)*Ca_o) / (V*F);
-    }
-
-    __device__ float calc_f2(float V_m, float Na_o) {
-      return K_Na_Ca * exp(-V_m*F/(R*T))*powf(Na_o,3) / (V*F);
-    }
-
-    __device__ float calc_Ca(float C_star, float CaM, float I_Ca, float V_m) {
-      return V * (I_Ca/(2*V*F) + n*K_R*C_star - calc_f1(Na_i, Ca_o)) / (n*K_mu*CaM + K_Ca - calc_f2(V_m, Na_o));
-    }
-
-    __device__ void cumsum(float* out, float* a){
-      out[0] = a[0];
-      for(int i = 1; i < 12; i++){
-        a_mu[i] = a_mu[i-1] + a[i];
-      }
-    }
-
-    __global__ void transduction(int num_neurons, curandStateXORWOW_t *state, %(type)s* lambda, \
-                                 %(type)s* X, %(type)s* Ca, %(type)s* dt, %(type)s* I, %(type)s* V_m)
-    {
-      int tid = blockIdx.x * NNEU + threadIdx.x;
-      int mid = tid % num_microvilli;
-      int nid = tid / num_microvilli;
-      
-      if(nid < num_neurons * num_microvilli) {
-        X[nid][mid][0] += curand_poisson(&state[tid], lambda)
-        float a[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
-
-        C_star = (X[5]/avo)/(V*powf(10,-3));
-        CaM = C_T - C_star;
-        
-        float h[12];
-        compute_h(&h, X[nid][mid], Ca[nid][tid], CaM);
-
-        float r1 = curand_uniform(&state[tid]);
-        float r2 = curand_uniform(&state[tid]);
-        
-        float f_p = calc_f_p(Ca);
-        float f_n = calc_f_n(C_star);
-        float c[12] = {
-          gamma_m_star*(1+h_m_star*f_n),
-          kappa_g_star,
-          kappa_plc_star,
-          gamma_gap,
-          gamma_g,
-          kappa_d_star,
-          gamma_plc_star*(1+h_plc_star*f_n),
-          gamma_d_star*(1+h_d_star*f_n),
-          kappa_t_star*(1+h_t_star_p*f_p)/(powf(k_d_star,2)),
-          gamma_t_star*(1+h_t_star_n*f_n),
-          K_mu/powf(V,2),
-          K_R
+        template = Template("""
+    #include "curand_kernel.h"
+    extern "C" {
+        #define NNEU {{ nneu }} //NROW * NCOL
+    
+        #define PLC_T 100
+        #define G_T 50
+        #define T_T 25
+    
+        #define kappa_g_star 7.05
+        #define kappa_plc_star 15.6
+        #define kappa_d_star 1300
+        #define kappa_t_star 150
+    
+        #define gamma_gap 3
+        #define gamma_g 3.5
+        #define gamma_plc_star 144
+        #define gamma_m_star 3.7
+        #define gamma_d_star 4
+        #define gamma_t_star 25
+    
+        #define h_plc_star 11.1
+        #define h_d_star 37.8
+        #define h_t_star_p 11.5
+        #define h_t_star_n 10
+        #define h_m_star 40
+    
+        #define k_d_star 1300
+        #define K_mu 30
+        #define V 3e-9
+        #define K_R 5.5
+        #define K_P 0.3
+        #define K_N 0.18
+        #define m_p 2
+        #define m_n 3
+        #define n_s 1
+        #define K_Na_Ca 3e-8
+        #define Na_o 120
+        #define Na_i 8
+        #define Ca_o 1.5
+        #define Ca_id 160e-6
+        #define F 96485
+        #define R 8.314
+        #define T 293
+        #define n 4
+        #define K_Ca 1000
+        #define I_T_star 0.68
+        #define C_T 903.45
+    
+        #define avo 6.023e23
+        #define NUM_MICROVILLI {{ num_micro }}
+    
+        #define TRP_rev 0.013
+    
+        #define la 0.5
+    
+        __constant__ int V_state_transition[7][12] = {
+          {-1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+          { 0, -1,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0},
+          { 0,  1, -1, -1,  0,  0,  0,  0,  0,  0,  0,  0},
+          { 0,  0,  1,  0,  0,  0, -1,  0,  0,  0,  0,  0},
+          { 0,  0,  0,  0,  0,  1,  0, -1, -2,  0,  0,  0},
+          { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1, -1},
+          { 0,  0,  0,  0,  0,  0,  0,  0,  1, -1,  0,  0}
         };
-
-        float a_mu[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
-        
-        int found = 0;
-
-        for(int j = 0; j < 12; j++){
-          a[j] = h[j]*c[j];
+    
+        __device__ void compute_h(float* h, double* X, float Ca, float CaM){
+          h[0] = X[0];
+          h[1] = X[0]*X[1];                             
+          h[2] = X[2]*(PLC_T-X[3]);                    
+          h[3] = X[2]*X[3];                             
+          h[4] = G_T-X[2]-X[1]-X[3];                    
+          h[5] = X[3];                                  
+          h[6] = X[3];                                 
+          h[7] = X[4];                                  
+          h[8] = X[4]*(X[4]-1)*(T_T-X[6])/2;           
+          h[9] = X[6];                  
+          h[10] = Ca*CaM;
+          h[11] = X[5];
         }
-
-        cumsum(a_mu, a);
-        a_s = a_mu[11];
-
-        dt = 1/(la+a_s)*logf(1/r1);
         
-        float propensity = r2*a_s;
-        for(int j = 0; j < 12; j++){
-          if(a_mu[j] >= propensity && a_mu[j] != 0){
-            if(j == 1) {
-              found = 1; break;
-            } else if(a_mu[j-1] < propensity) {
-              found = 1; break;
+        __device__ float calc_f_p(float Ca){
+          return powf(Ca/K_P, m_p)/(1+powf(Ca/K_P, m_p));
+        }
+    
+        __device__ float calc_f_n(float C_star){
+          return n_s*powf(C_star/K_N, m_n)/(1+powf(C_star/K_N, m_n));
+        }
+    
+        __device__ float calc_f1() {
+          return K_Na_Ca * (powf(Na_i, 3)*Ca_o) / (V*F);
+        }
+    
+        __device__ float calc_f2(float V_m) {
+          return K_Na_Ca * exp(-V_m*F/(R*T))*powf(Na_o,3) / (V*F);
+        }
+    
+        __device__ float calc_Ca(float C_star, float CaM, float I_Ca, float V_m) {
+          return V * (I_Ca/(2*V*F) + n*K_R*C_star + calc_f1()) / (n*K_mu*CaM + K_Ca + calc_f2(V_m));
+        }
+    
+        __device__ void cumsum(float* a_mu, float* a){
+          a_mu[0] = a[0];
+          for(int i = 1; i < 12; i++){
+            a_mu[i] = a_mu[i-1] + a[i];
+          }
+        }
+    
+        __global__ void transduction(int num_neurons, curandStateXORWOW_t *state, {{ type }} lambda, \
+                                     {{ type }}*** X, {{ type }}** dt_micro, {{ type }}** I_micro, {{ type }}* V_m)
+        {
+          int tid = blockIdx.x * NNEU + threadIdx.x;
+          int mid = tid % NUM_MICROVILLI;
+          int nid = tid / NUM_MICROVILLI;
+          
+          if(nid < num_neurons * NUM_MICROVILLI) {
+            X[nid][mid][0] += curand_poisson(&state[tid], lambda);
+            
+            float C_star_conc = X[nid][mid][5]/avo*1e3/(V*1e-9);
+            float CaM_conc = (C_T - X[tid][mid][5])/avo*1e3/(V*1e-9);
+    
+            float I_Ca = 0.4*I_micro[nid][mid];
+    
+            float Ca = calc_Ca(C_star_conc, CaM_conc, I_Ca, V_m[tid]);
+            
+            float h[12];
+            compute_h(h, X[nid][mid], Ca, CaM_conc);
+    
+            float r1 = curand_uniform(&state[tid]);
+            float r2 = curand_uniform(&state[tid]);
+            
+            float f_p = calc_f_p(Ca);
+            float f_n = calc_f_n(C_star_conc);
+            float c[12] = {
+              gamma_m_star*(1+h_m_star*f_n),
+              kappa_g_star,
+              kappa_plc_star,
+              gamma_gap,
+              gamma_g,
+              kappa_d_star,
+              gamma_plc_star*(1+h_plc_star*f_n),
+              gamma_d_star*(1+h_d_star*f_n),
+              kappa_t_star*(1+h_t_star_p*f_p)/(powf(k_d_star,2)),
+              gamma_t_star*(1+h_t_star_n*f_n),
+              K_mu/powf(V,2),
+              K_R
+            };
+    
+            float a[12];
+            for(int j = 0; j < 12; j++){
+              a[j] = h[j]*c[j];
+            }
+    
+            float a_mu[12];
+            cumsum(a_mu, a);
+            
+            float a_s = a_mu[11];
+    
+            dt_micro[tid][mid] = 1/(la+a_s)*logf(1/r1);
+            
+            float propensity = r2*a_s;
+            int j, found = 0;
+            for(j = 0; j < 12; j++){
+              if(a_mu[j] >= propensity && a_mu[j] != 0){
+                if(j == 1) {
+                  found = 1; break;
+                } else if(a_mu[j-1] < propensity) {
+                  found = 1; break;
+                }
+              }
+            }
+    
+            if(found){
+              for(int k = 0; k < 7; k++){
+                X[nid][mid][k] += V_state_transition[k][j];
+              }
+            }
+    
+            if(TRP_rev > V_m[nid]) {
+              I_micro[nid][mid] = X[nid][mid][6]*8*(TRP_rev-V_m[nid]);
+            } else {
+              I_micro[nid][mid] = 0;
             }
           }
         }
-
-        if(found){
-          for(int k = 0; k < 7; k++){
-            X[nid][mid][k] += V_state_transition[k][j];
-          }
-        }
-
-        I[nid] = I_T_star*X[tid][mid][6];
-        float I_Ca = 0.4*I;
-
-        // update C_star
-        C_star = (X[5]/avo)/(V*powf(10,-3));
-        CaM = C_T - C_star;
-
-        Ca[tid][mid] = calc_Ca(C_star, CaM, I_Ca, V_m[tid]);
-      }
     }
     """ # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
         self.update_grid = ((self._num_neurons - 1) / 128 + 1, 1)
-        mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
+        mod = SourceModule(template.render(type=dtype_to_ctype(dtype), nneu=update_block[0], num_micro=NUM_MICROVILLI), options=["--ptxas-options=-v"], no_extern_c=True)
         func = mod.get_function("transduction")
 
         func.prepare([np.int,     # num_neurons
                       np.intp,    # state
                       np.intp,    # lambda
                       np.intp,    # X
-                      np.intp,    # Ca
                       scalartype, # dt
                       np.intp,    # I
                       np.intp])   # V_m
