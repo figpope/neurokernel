@@ -122,7 +122,7 @@ __device__ void find_T_ph(float* T_ph, int* final_T, float* N_ph){
   }
   printf("device final_T %d\\n", *final_T);
 }
-__global__ void transduction(float *dest, float *X_out, float *src, float* photons, float* rand_array)
+__global__ void transduction(float *dest, float *X_out, float *Ca_out, float *src, float* photons, float* rand_array)
 {
   float Ca = 160e-6;
   float CaM = C_T;
@@ -267,6 +267,7 @@ __global__ void transduction(float *dest, float *X_out, float *src, float* photo
     float I_Ca = 0.4*I_in;
 
     float Ca = calc_Ca(C_star_concentration, CaM_concentration, I_Ca);     
+    Ca_out[step] = Ca;
   }
 }
 """, options = ["--ptxas-options=-v"])
@@ -282,7 +283,8 @@ photon_array = np.array(photons[:,0],np.float32)
 rand_array = np.random.rand(100000);
 rand_array =  np.array(rand_array, np.float32)
 X_out = np.zeros((10000*7,1), np.float32)
-transduction( drv.Out(dest), drv.Out(X_out), drv.In(testin),drv.In(photon_array),drv.In(rand_array),
+Ca_out = np.zeros((10000,1), np.float32)
+transduction( drv.Out(dest), drv.Out(X_out), drv.Out(Ca_out), drv.In(testin),drv.In(photon_array),drv.In(rand_array),
                     block=(1,1,1), grid=grid)
 #print dest
 X_out = np.reshape(X_out, (10000,7))
