@@ -47,11 +47,11 @@ class Photoreceptor(BaseNeuron):
     def neuron_class(self): return True
 
     def eval(self, st = None):
-        self.update_microvilli.prepared_async_call(self.update_grid, self.update_block, st,
+        self.update_microvilli.prepared_async_call(self.micro_update_grid, self.micro_update_block, st,
                                              self.num_neurons, self.state.gpudata, self.lam.gpudata,
                                              self.X.gpudata, self.dt_micro.gpudata,
                                              self.I_micro.gpudata, self.V)
-        self.update_hhn.prepared_async_call(self.update_grid, self.update_block, st,
+        self.update_hhn.prepared_async_call(self.hhn_update_grid, self.hhn_update_block, st,
                                             self.V, self.sa, self.si, self.dra, self.dri,
                                             self.num_neurons, self.I_micro.gpudata, self.I.gpudata, 
                                             self.ddt*1000)
@@ -115,19 +115,19 @@ class Photoreceptor(BaseNeuron):
     """# Used 41 registers, 96 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
-        self.update_block = (128,1,1)
-        self.update_grid = ((self.num_neurons - 1) / 128 + 1, 1)
+        self.hhn_update_block = (128,1,1)
+        self.hhn_update_grid = ((self.num_neurons - 1) / 128 + 1, 1)
         mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
         func = mod.get_function("hhn_model")
 
-        func.prepare([np.intp,   # V
-                      np.intp,   # Sa
-                      np.intp,   # Si
-                      np.intp,   # Dra
-                      np.intp,   # Dri
-                      np.int32,  # num_neurons
-                      np.intp,   # I_pre
-                      np.intp])  # dt
+        func.prepare([np.intp,     # V
+                      np.intp,     # Sa
+                      np.intp,     # Si
+                      np.intp,     # Dra
+                      np.intp,     # Dri
+                      scalartype,  # num_neurons
+                      np.intp,     # I_pre
+                      np.intp])    # dt
 
         return func
 
@@ -321,8 +321,8 @@ class Photoreceptor(BaseNeuron):
     """) # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
-        self.update_block = (128,1,1)
-        self.update_grid = ((self._num_neurons - 1) / 128 + 1, 1)
+        self.micro_update_block = (128,1,1)
+        self.micro_update_grid = ((self._num_neurons - 1) / 128 + 1, 1)
         mod = SourceModule(template.render(type=dtype_to_ctype(dtype), nneu=update_block[0], num_micro=NUM_MICROVILLI), options=["--ptxas-options=-v"], no_extern_c=True)
         func = mod.get_function("transduction")
 
