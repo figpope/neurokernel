@@ -1,4 +1,4 @@
-from baseneuron import BaseNeuron
+ferom baseneuron import BaseNeuron
 
 import numpy as np
 import pycuda.gpuarray as garray
@@ -326,7 +326,7 @@ class Photoreceptor(BaseNeuron):
         mod = SourceModule(template.render(type=dtype_to_ctype(dtype), nneu=update_block[0], num_micro=NUM_MICROVILLI), options=["--ptxas-options=-v"], no_extern_c=True)
         func = mod.get_function("transduction")
 
-        func.prepare([np.int,     # num_neurons
+        func.prepare([scalartype,     # num_neurons
                       np.intp,    # state
                       np.intp,    # lambda
                       np.intp,    # X
