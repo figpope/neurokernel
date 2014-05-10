@@ -14,8 +14,8 @@ from jinja2 import Template
 
 # <codecell>
 
-NUM_MICROVILLI = 800
-num_neurons = 1
+NUM_MICROVILLI = 30000
+num_neurons = 128
 update_block = (128,1,1)
 update_grid = ((num_neurons - 1) / 128 + 1, 1)
 
@@ -37,7 +37,9 @@ ddt = 0.0001
 
 X_init = [0,50,0,0,0,0,0]
 X = garray.to_gpu(np.asarray([[X_init for i in range(NUM_MICROVILLI)] for neuron in range(num_neurons)], dtype=np.int32))
+print X.size
 Ca = garray.to_gpu(np.asarray(np.zeros([num_neurons, NUM_MICROVILLI], dtype=np.float32)))
+print Ca.size
 I_micro = garray.to_gpu(np.asarray(np.ones([num_neurons, NUM_MICROVILLI], dtype=np.float32)))
 dt_micro = garray.to_gpu(np.asarray(np.zeros([num_neurons, NUM_MICROVILLI], dtype=np.float32)))
 
@@ -45,7 +47,7 @@ cuda.memcpy_htod(int(V), np.asarray(n_dict['initV'], dtype=np.float32))
 
 state = curand_setup(num_neurons*NUM_MICROVILLI,100)
 
-photon_input = garray.to_gpu(np.asarray([800], dtype=np.float32))
+photon_input = garray.to_gpu(np.asarray([30000], dtype=np.float32))
 
 # <codecell>
 
@@ -169,7 +171,9 @@ def get_microvilli_kernel():
           int tid = blockIdx.x * NNEU + threadIdx.x;
           int mid = tid % NUM_MICROVILLI;
           int nid = tid / NUM_MICROVILLI;
+	  //printf("%d \\n", mid);
           
+
           if(nid < num_neurons * NUM_MICROVILLI) {
             X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
             
@@ -256,7 +260,7 @@ def get_microvilli_kernel():
             a_mu[11] = a_mu[10] + a[11];
             
             float a_s = a_mu[11];
-	    if(nid == 0 && mid == 0)
+	    //if(nid == 0 && mid == 0)
 	    {
 		for(int j=0;j<12;j++)
 		    printf("%f ", a_mu[j]);
@@ -272,15 +276,15 @@ def get_microvilli_kernel():
             int found = 0;
             for(j = 0; j < 12; j++){
               id_test[j] = 1;
-              //a_mu[j] = 1.0;
-              /*if(a_mu[j] >= propensity && a_mu[j] != 0){
+              a_mu[j] = 1.0;
+              if(a_mu[j] >= propensity && a_mu[j] != 0){
                 if(j == 0) {
                   found = 1; break;
                 } else if(a_mu[j-1] < propensity) {
                   found = 1; break;
                 }
                 
-              }*/
+              }
               
             }
             found = 1;
