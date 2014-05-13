@@ -1,0 +1,98 @@
+% !TEX TS-program = pdflatex
+
+\documentclass[12pt]{article}
+\usepackage{geometry}            % See geometry.pdf to learn the layout options. There are lots.
+\geometry{letterpaper}           % ... or a4paper or a5paper or ...
+\usepackage[parfill]{parskip}    % Activate to begin paragraphs with an empty line rather than an indent
+\usepackage{amssymb}
+\usepackage{indentfirst}
+\usepackage{verbatim}
+\usepackage{natbib}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{lscape}
+\usepackage{graphicx}
+\usepackage{wrapfig}
+\usepackage{verbatim}
+\usepackage{helvet}
+\usepackage{float}
+\usepackage[caption=false]{subfig}
+\usepackage{calc}
+\usepackage{xspace}
+\usepackage{pifont}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{placeins}
+\usepackage{epstopdf}
+\usepackage{natbib}
+\usepackage{fancyhdr}
+
+\pagestyle{fancy}
+% with this we ensure that the chapter and section headings are in lowercase.
+\fancyhf{}                                       % delete current header and footer
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[LO]{\rightmark}
+\fancyhead[RE]{\leftmark}
+\fancyfoot[LO,RE]{SpikeDB: plan and schedule}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\addtolength{\headheight}{0.6pt}                 % space for the rule
+\addtolength{\headsep}{5pt}                      % space for the rule
+\fancypagestyle{plain}{
+  \fancyhead{}                                   % get rid of headers on plain pages
+  \renewcommand{\headrulewidth}{0.0pt}           % and the line
+}
+
+\title{Final Report: Bigdata in Neuroscience: Vision Project\\
+}
+
+\author{Hanyu Li and Andrew Edward FigPope\\
+Columbia University
+}
+%\date{}                                          % Activate to display a given date or no date
+
+\begin{document}
+\maketitle
+
+
+\section{Abstract}
+\section{Introduction}
+\section{Design and implementation}
+\begin{itemize}
+\item Phase I: 
+Implement a Hodgkin-Huxley neuron model
+  \begin{itemize}
+	\item[a] 
+    \item[b] 
+        \begin{itemize}
+        \item[1] 
+        \item[2] 
+        \item[3]
+        \end{itemize}
+        
+    \item[c] 
+
+  \end{itemize}
+\item Phase II:
+Implement a transduction model on a single microvillus
+    \begin{itemize}
+    \item[a] 
+    \item[b] 
+    \item[c]
+    \end{itemize}
+\item Phase III: Scale up to 768 ommatidia, 4608 photoreceptors 
+\item Phase IV: Create visual input and feed into retina
+\item Phase V: Connect the retina mdoel to existing lamina model through Neurokernel API
+\end{itemize}
+\section{Timeline}
+    Phase I: March,15 - March,24\\
+    Phase II: March,25 - April,21\\
+    Phase III: April,11 - May,13\\
+    Phase IV: April,28 - May,13\\
+    Phase V: May,10 - May, 13\\
+\section{Results}
+\section{Conclusion}
+
+\end{document}
