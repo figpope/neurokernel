@@ -1,4 +1,4 @@
-ferom baseneuron import BaseNeuron
+from baseneuron import BaseNeuron
 
 import numpy as np
 import pycuda.gpuarray as garray
@@ -7,14 +7,16 @@ import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 from neurokernel.LPU.utils.curand import curand_setup
 
+import tables
 from jinja2 import Template
 
 NUM_MICROVILLI = 30000
 
 class Photoreceptor(BaseNeuron):
     def __init__(self, n_dict, V, dt , debug=False, LPU_id=None):
-        super(Photoreceptor, self).__init__(n_dict, V, dt, debug, LPU_id)
         self.num_neurons = len(n_dict['id'])
+        self.LPU_id = None
+        super(Photoreceptor, self).__init__(n_dict, V, dt, debug, LPU_id)
         self.debug = debug
 
         self.dt = np.double(dt)
@@ -46,9 +48,6 @@ class Photoreceptor(BaseNeuron):
             self.I_file = tables.openFile(self.LPU_id + "_I.h5", mode="w")
             self.I_file.createEArray("/","array", \
                                      tables.Float64Atom(), (0,self.num_neurons))
-            self.V_file = tables.openFile(self.LPU_id + "_V.h5", mode="w")
-            self.V_file.createEArray("/","array", \
-                                     tables.Float64Atom(), (0,self.num_neurons))
     
     @property
     def neuron_class(self): return True
@@ -56,14 +55,13 @@ class Photoreceptor(BaseNeuron):
     def eval(self, st = None):
         self.update_microvilli.prepared_async_call(self.micro_update_grid, self.micro_update_block, st,
                                                    self.num_neurons, self.state.gpudata, self.I.gpudata, 
-                                                   self.X.gpudata, self.ddt, self.I_micro.gpudata, self.V)
+                                                   self.X.gpudata, self.ddt*10, self.I_micro.gpudata, self.V)
         self.update_hhn.prepared_async_call(self.hhn_update_grid, self.hhn_update_block, st,
-                                            self.num_neurons, ddt*1000, self.V, self.sa.gpudata, 
+                                            self.num_neurons, self.ddt*1000, self.V, self.sa.gpudata, 
                                             self.si.gpudata, self.dra.gpudata, self.dri.gpudata, 
                                             self.I_micro.gpudata, self.I.gpudata)
         if self.debug:
             self.I_file.root.array.append(self.I.get().reshape((1,-1)))
-            self.V_file.root.array.append(self.V.get().reshape((1,-1)))
 
     def get_hhn_kernel(self):
         template = """
@@ -315,7 +313,7 @@ class Photoreceptor(BaseNeuron):
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.micro_update_block = (512,1,1)
-        self.micro_update_grid = (((NUM_MICROVILLI - 1) / micro_update_block[0] + 1) * num_neurons, 1)
+        self.micro_update_grid = (((NUM_MICROVILLI - 1) / self.micro_update_block[0] + 1) * self.num_neurons, 1)
         mod = SourceModule(template.render(type=dtype_to_ctype(dtype), nneu=self.micro_update_block[0], num_micro=NUM_MICROVILLI), options=["--ptxas-options=-v"], no_extern_c=True)
         func = mod.get_function("transduction")
 
