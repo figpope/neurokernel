@@ -10,7 +10,7 @@ from neurokernel.LPU.utils.curand import curand_setup
 import tables
 from jinja2 import Template
 
-NUM_MICROVILLI = 30000
+NUM_MICROVILLI = 1000
 
 class Photoreceptor(BaseNeuron):
     def __init__(self, n_dict, V, dt , debug=False, LPU_id=None):
@@ -88,7 +88,7 @@ class Photoreceptor(BaseNeuron):
           I[nid] += I_micro[nid][i];
         }
         float I_pre = I[nid] / m_V;
-
+			
         // computing voltage gated time constants and steady-state
         // activation/inactivation functions
         float sa_inf = powf(1 / (1 + expf((-30 - V[nid]) / 13.5)), 1/3);
@@ -119,6 +119,9 @@ class Photoreceptor(BaseNeuron):
         dri[nid] += dt*ddri;
         
         V[nid] /= 10000;
+				
+				//V[nid] = I[nid];
+
     }
   }
     """# Used 41 registers, 96 bytes cmem[0], 56 bytes cmem[16]
@@ -254,6 +257,7 @@ class Photoreceptor(BaseNeuron):
             double propensity = 0;
             float C_star_conc, CaM, CaM_conc, I_Ca, f_p, f_n, r2;
             float Ca = 160e-6;
+						float g_trp = 0;
 
             X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
     
@@ -264,7 +268,13 @@ class Photoreceptor(BaseNeuron):
               CaM = C_T - X[nid][mid][5];
               CaM_conc = CaM / concentration_ratio;
 
-              I_micro[nid][mid] = I_T_star * X[nid][mid][6];
+              //I_micro[nid][mid] = I_T_star * X[nid][mid][6];
+							if(TRP_rev > V_m[nid])
+								g_trp = 8;
+							else
+								g_trp = 0;
+							I_micro[nid][mid] = X[nid][mid][6] * g_trp * (TRP_rev - V_m[nid]);
+
               I_Ca = 0.4 * I_micro[nid][mid];
               Ca = calc_Ca(C_star_conc, CaM_conc, I_Ca, V_m[nid]);
 
