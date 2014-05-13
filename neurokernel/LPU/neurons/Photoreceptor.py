@@ -54,7 +54,7 @@ class Photoreceptor(BaseNeuron):
 
     def eval(self, st = None):
         self.update_microvilli.prepared_async_call(self.micro_update_grid, self.micro_update_block, st,
-                                                   self.num_neurons, self.state.gpudata, self.photon_input.gpudata, 
+                                                   self.num_neurons, self.state.gpudata, self.I.gpudata, 
                                                    self.X.gpudata, self.ddt, self.I_micro.gpudata, self.V)
         self.update_hhn.prepared_async_call(self.hhn_update_grid, self.hhn_update_block, st,
                                             self.num_neurons, ddt*1000, self.V, self.sa.gpudata, 
@@ -84,6 +84,7 @@ class Photoreceptor(BaseNeuron):
 
     if(nid < num_neurons) {
         V[nid] *= 1000;
+        I[nid] = 0;
         for(int i = 0; i < NUM_MICROVILLI; i++) {
           I[nid] += I_micro[nid][i];
         }
