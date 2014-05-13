@@ -14,7 +14,7 @@ from jinja2 import Template
 
 # <codecell>
 
-NUM_MICROVILLI = 1
+NUM_MICROVILLI = 100
 num_neurons = 1
 
 hhn_update_block = (128,1,1)
@@ -48,14 +48,16 @@ ddt = 0.00001
 
 X_init = [0,50,0,0,0,0,0]
 X = garray.to_gpu(np.asarray([[X_init for i in range(NUM_MICROVILLI)] for neuron in range(num_neurons)], dtype=np.int32))
-I_micro = garray.to_gpu(np.asarray(np.ones([num_neurons, NUM_MICROVILLI], dtype=np.float32)))
+I_micro = garray.to_gpu(np.asarray(np.ones([num_neurons, NUM_MICROVILLI,10000], dtype=np.float32)))
+print I_micro
 dt_micro = garray.to_gpu(np.asarray(np.zeros([num_neurons, NUM_MICROVILLI], dtype=np.float32)))
 
 cuda.memcpy_htod(int(V), np.asarray(n_dict['initV'], dtype=np.float32))
 
 state = curand_setup(num_neurons*NUM_MICROVILLI,100)
 
-photon_input = garray.to_gpu(np.asarray([30000]*num_neurons, dtype=np.float32))
+photon_input = garray.to_gpu(np.asarray([3]*num_neurons, dtype=np.float32))
+#print photon_input
 
 # <codecell>
 
@@ -156,96 +158,124 @@ def get_microvilli_kernel():
     
         __global__ void transduction(int num_neurons, curandStateXORWOW_t *state, {{ type }}* photon_input, \
                                      int (*X)[NUM_MICROVILLI][7], {{ type }} (*dt_micro)[NUM_MICROVILLI], \
-                                     {{ type }} ddt, {{ type }} (*I_micro)[NUM_MICROVILLI], {{ type }}* V_m, float* id_test)
+                                     {{ type }} ddt, {{ type }} (*I_micro)[NUM_MICROVILLI][10000], {{ type }}* V_m, float* id_test)
         {
           int tid = blockIdx.x * NNEU + threadIdx.x;
           int mid = tid % NUM_MICROVILLI;
           int nid = tid / NUM_MICROVILLI;
+	  //printf("%d, %d, %d \\n", tid, mid, nid);
+	  int debug = 5;
           
           if(tid < num_neurons * NUM_MICROVILLI) {
+	    int iteration_number = 10000;
             float t = 0;
+	    float timestep = 1e-4;
+	    float t_end = t+timestep;
+	    float t_terminate =1;
             int steps = 0;
-            while(t + dt_micro[nid][mid] < ddt and steps < 200000) {
-              X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
-              
-              float C_star_conc = X[nid][mid][5]/avo*1e3/(V*1e-9);
-              float CaM = C_T - X[nid][mid][5];
-              float CaM_conc = CaM/avo*1e3/(V*1e-9);
+	    int rand = 0;
+	    float r1,r2;
+	    double a_mu[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
+	    double a_s=0;
+	    double a[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
+	    double propensity=0;
+	    int found = 0;
+            float C_star_conc;
+            float CaM;
+            float CaM_conc;
+	    float Ca=160e-6;
+	    float dt;
       
-              float I_Ca = 0.4*I_micro[nid][mid];
-      
-              float Ca = calc_Ca(C_star_conc, CaM_conc, I_Ca, V_m[nid]);
-                  
-              float r1 = curand_uniform(&state[tid]);
-              float r2 = curand_uniform(&state[tid]);
-              
-              float f_p = calc_f_p(Ca);
-              float f_n = calc_f_n(C_star_conc);
 
-              double a[12] = {
-                  X[nid][mid][0] * gamma_m_star*(1+h_m_star*f_n),
-                  X[nid][mid][0]*X[nid][mid][1] * kappa_g_star,
-                  X[nid][mid][2]*(PLC_T-X[nid][mid][3]) * kappa_plc_star,
-                  X[nid][mid][2]*X[nid][mid][3] * gamma_gap,
-                  (G_T-X[nid][mid][2]-X[nid][mid][1]-X[nid][mid][3]) * gamma_g,
-                  X[nid][mid][3] * kappa_d_star,
-                  X[nid][mid][3] * gamma_plc_star*(1+h_plc_star*f_n),
-                  X[nid][mid][4] * gamma_d_star*(1+h_d_star*f_n),
-                  (X[nid][mid][4]*(X[nid][mid][4]-1)*(T_T-X[nid][mid][6])/2) * (kappa_t_star*(1+h_t_star_p*f_p)/(powf(k_d_star,2))),
-                  X[nid][mid][6] * gamma_t_star*(1+h_t_star_n*f_n),
-                  Ca*CaM * (K_mu/powf(V,2)),
-                  X[nid][mid][5] * K_R
-              };
-      
-              double a_mu[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
-              cumsum(a_mu, a);
+
+
+	    for(int i=0; i<iteration_number;i++){
+	      rand = curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
+
+              X[nid][mid][0] += rand;
+
+              //X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
               
-              double a_s = a_mu[11];
-              
-              if(dt_micro[nid][mid] == 0) {
-                dt_micro[nid][mid] = 1/(la+a_s)*logf(1/r1);
-              }
-              
-              if(t + dt_micro[nid][mid] < ddt) {
-                double propensity = r2*a_s;
-                int j = 0;
-                int found = 0;
-                for(j = 0; j < 12; j++){
-                  if(a_mu[j] >= propensity && a_mu[j] != 0){
-                    if(j == 0) {
-                      found = 1; break;
-                    } else if(a_mu[j-1] < propensity) {
-                      found = 1; break;
+	      if(nid==0 && debug==0)
+		printf("%d \\n",rand);
+		  ;//printf("%d \\n", X[nid][mid][0]); 
+	      
+	      //while(t < t_end){
+		  float r1 = curand_uniform(&state[tid]);
+		  float r2 = curand_uniform(&state[tid]);
+		  if(nid == 0 && debug == 0)
+		    printf("%f %f\\n", r1, r2);
+		  cumsum(a_mu, a);
+		  a_s = a_mu[11];
+		  dt = 1e-4;
+		  
+                  propensity = r2*a_s;
+                  int j = 0;
+                  found = 0;
+                  for(j = 0; j < 12; j++){
+                    if(a_mu[j] >= propensity && a_mu[j] != 0){
+                      if(j == 0) {
+                        found = 1; break;
+                      } else if(a_mu[j-1] < propensity) {
+                        found = 1; break;
+                      }
                     }
                   }
-                }
-                
-                if(found){
-                  for(int k = 0; k < 7; k++){
-                    X[nid][mid][k] += V_state_transition[k][j];
+                  
+                  if(found){
+                    for(int k = 0; k < 7; k++){
+                      X[nid][mid][k] += V_state_transition[k][j];
+                    }
+		      
+		    if(nid == 0 && mid == 0 && debug == 3)
+		      {
+		        for(int k = 0; k < 7; k++){
+		  	printf("%d ", X[nid][mid][k]);
+		        }
+		        printf("\\n");
+		      }
                   }
-                }
-        
-                if(TRP_rev > V_m[nid]) {
-                  I_micro[nid][mid] = X[nid][mid][6]*8*(TRP_rev-V_m[nid]);
-                } else {
-                  I_micro[nid][mid] = 0;
-                }
-                
-                id_test[0] = dt_micro[nid][mid];
-                id_test[1] = t;
-                id_test[2] = ddt;
-                id_test[3] = steps;
-                t += dt_micro[nid][mid];
-                dt_micro[nid][mid] = 0;
-              }
+		  C_star_conc = X[nid][mid][5]/avo*1e3/(V*1e-9);
+		  CaM = C_T - X[nid][mid][5];
+		  CaM_conc = CaM/avo*1e3/(V*1e-9);
+		  float f_p = calc_f_p(Ca);
+		  float f_n = calc_f_n(C_star_conc);
+		  if(nid == 0 && debug == 1)
+		    printf("%f %f\\n", f_p, f_n);
+		  a[0]=    X[nid][mid][0] * gamma_m_star*(1+h_m_star*f_n);
+		  a[1]=    X[nid][mid][0]*X[nid][mid][1] * kappa_g_star;
+		  a[2]=    X[nid][mid][2]*(PLC_T-X[nid][mid][3]) * kappa_plc_star;
+		  a[3]=    X[nid][mid][2]*X[nid][mid][3] * gamma_gap;
+		  a[4]=    (G_T-X[nid][mid][2]-X[nid][mid][1]-X[nid][mid][3]) * gamma_g;
+		  a[5]=    X[nid][mid][3] * kappa_d_star;
+		  a[6]=    X[nid][mid][3] * gamma_plc_star*(1+h_plc_star*f_n);
+		  a[7]=    X[nid][mid][4] * gamma_d_star*(1+h_d_star*f_n);
+		  a[8]=    (X[nid][mid][4]*(X[nid][mid][4]-1)*(T_T-X[nid][mid][6])/2) * (kappa_t_star*(1+h_t_star_p*f_p)/(powf(k_d_star,2)));
+		  a[9]=    X[nid][mid][6] * gamma_t_star*(1+h_t_star_n*f_n);
+		  a[10]=    Ca*CaM * K_mu;
+		  a[11]=    X[nid][mid][5] * K_R;
+
+                  I_micro[nid][mid][i] = I_T_star * X[nid][mid][6];
+		  float I_Ca = 0.4*I_micro[nid][mid][i];
+		  float Ca = calc_Ca(C_star_conc, CaM_conc, I_Ca, V_m[nid]);
+
+
+	      //}
+	      //t = t_end;
+	      //t_end = t_end + timestep;
+	    }
+	    id_test[0] = dt_micro[nid][mid];
+	    id_test[1] = t;
+	    id_test[2] = ddt;
+	    id_test[3] = steps;
+	    t += dt_micro[nid][mid];
+	    dt_micro[nid][mid] = 0;
               
-              steps++;
             }
             
-            dt_micro[nid][mid] -= (ddt - t);
-          }
-        }
+          
+        
+	}
     }
     """) # Used 29 registers, 104 bytes cmem[0], 56 bytes cmem[16]
         dtype = np.float32
@@ -276,8 +306,8 @@ micro.prepared_call(micro_update_grid, micro_update_block, num_neurons,
                     dt_micro.gpudata, ddt, I_micro.gpudata, V, id_test.gpudata)
 
 # <codecell>
-
-id_test
+print I_micro
+#print id_test
 
 # <codecell>
 
@@ -337,7 +367,7 @@ hhn_model(int num_neurons, %(type)s dt, %(type)s* V, %(type)s* sa, %(type)s* si,
         dra[nid] += dt*ddra;
         dri[nid] += dt*ddri;
         
-        V[nid] /= 1000;
+        V[nid] /= 10000;
     }
 }
 """ # Used 40 registers, 104 bytes cmem[0], 56 bytes cmem[16]
@@ -369,7 +399,7 @@ hhn.prepared_call(hhn_update_grid, hhn_update_block, np.int32(num_neurons), ddt*
 
 # <codecell>
 
-V_data
+#print V_data
 
 # <codecell>
 

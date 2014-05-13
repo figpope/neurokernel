@@ -14,7 +14,7 @@ from jinja2 import Template
 
 # <codecell>
 
-NUM_MICROVILLI = 1
+NUM_MICROVILLI = 10
 num_neurons = 1
 
 hhn_update_block = (128,1,1)
@@ -55,7 +55,8 @@ cuda.memcpy_htod(int(V), np.asarray(n_dict['initV'], dtype=np.float32))
 
 state = curand_setup(num_neurons*NUM_MICROVILLI,100)
 
-photon_input = garray.to_gpu(np.asarray([30000]*num_neurons, dtype=np.float32))
+photon_input = garray.to_gpu(np.asarray([3]*num_neurons, dtype=np.float32))
+print photon_input
 
 # <codecell>
 
@@ -161,13 +162,23 @@ def get_microvilli_kernel():
           int tid = blockIdx.x * NNEU + threadIdx.x;
           int mid = tid % NUM_MICROVILLI;
           int nid = tid / NUM_MICROVILLI;
+	  //printf("%d, %d, %d \\n", tid, mid, nid);
+	  int debug = 1;
           
           if(tid < num_neurons * NUM_MICROVILLI) {
             float t = 0;
             int steps = 0;
+	    int rand = 0;
             while(t + dt_micro[nid][mid] < ddt and steps < 200000) {
-              X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
+	      rand = curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
+
+              X[nid][mid][0] += rand;
+
+              //X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
               
+	      if(nid==0)// && mid ==0)
+		printf("%d \\n",rand);
+		  ;//printf("%d \\n", X[nid][mid][0]); 
               float C_star_conc = X[nid][mid][5]/avo*1e3/(V*1e-9);
               float CaM = C_T - X[nid][mid][5];
               float CaM_conc = CaM/avo*1e3/(V*1e-9);
@@ -178,9 +189,14 @@ def get_microvilli_kernel():
                   
               float r1 = curand_uniform(&state[tid]);
               float r2 = curand_uniform(&state[tid]);
+	      if(nid == 0 && debug == 0)
+		printf("%f %f\\n", r1, r2);
+	      
               
               float f_p = calc_f_p(Ca);
               float f_n = calc_f_n(C_star_conc);
+	      if(nid == 0 && debug == 1)
+		printf("%f %f\\n", f_p, f_n);
 
               double a[12] = {
                   X[nid][mid][0] * gamma_m_star*(1+h_m_star*f_n),
@@ -193,7 +209,7 @@ def get_microvilli_kernel():
                   X[nid][mid][4] * gamma_d_star*(1+h_d_star*f_n),
                   (X[nid][mid][4]*(X[nid][mid][4]-1)*(T_T-X[nid][mid][6])/2) * (kappa_t_star*(1+h_t_star_p*f_p)/(powf(k_d_star,2))),
                   X[nid][mid][6] * gamma_t_star*(1+h_t_star_n*f_n),
-                  Ca*CaM * (K_mu/powf(V,2)),
+                  Ca*CaM * K_mu,
                   X[nid][mid][5] * K_R
               };
       
@@ -224,7 +240,16 @@ def get_microvilli_kernel():
                   for(int k = 0; k < 7; k++){
                     X[nid][mid][k] += V_state_transition[k][j];
                   }
+		    /*
+		    if(nid == 0 && mid == 0)
+		    {
+		      for(int k = 0; k < 7; k++){
+			printf("%d ", X[nid][mid][k]);
+		      }
+		      printf("\\n");
+		    }*/
                 }
+		    
         
                 if(TRP_rev > V_m[nid]) {
                   I_micro[nid][mid] = X[nid][mid][6]*8*(TRP_rev-V_m[nid]);
@@ -277,7 +302,7 @@ micro.prepared_call(micro_update_grid, micro_update_block, num_neurons,
 
 # <codecell>
 
-id_test
+print id_test
 
 # <codecell>
 
@@ -369,7 +394,7 @@ hhn.prepared_call(hhn_update_grid, hhn_update_block, np.int32(num_neurons), ddt*
 
 # <codecell>
 
-V_data
+print V_data
 
 # <codecell>
 
