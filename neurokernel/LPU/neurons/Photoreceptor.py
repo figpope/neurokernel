@@ -35,6 +35,8 @@ class Photoreceptor(BaseNeuron):
 
         self.I_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
 
+	self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float32)))
+
         cuda.memcpy_htod(int(self.V), np.asarray(n_dict['initV'], dtype=np.double))
 
         self.state = curand_setup(self.num_neurons*NUM_MICROVILLI,100)
@@ -55,7 +57,7 @@ class Photoreceptor(BaseNeuron):
     def eval(self, st = None):
         self.update_microvilli.prepared_async_call(self.micro_update_grid, self.micro_update_block, st,
                                                    self.num_neurons, self.state.gpudata, self.I.gpudata, 
-                                                   self.X.gpudata, self.ddt*10, self.I_micro.gpudata, self.V)
+                                                   self.X.gpudata, self.ddt*10, self.I_micro.gpudata, self.V, self.dt_micro.gpudata)
         self.update_hhn.prepared_async_call(self.hhn_update_grid, self.hhn_update_block, st,
                                             self.num_neurons, self.ddt*1000, self.V, self.sa.gpudata, 
                                             self.si.gpudata, self.dra.gpudata, self.dri.gpudata, 
@@ -89,6 +91,7 @@ class Photoreceptor(BaseNeuron):
         }
         float I_pre = I[nid] / m_V;
 			
+	/*
         // computing voltage gated time constants and steady-state
         // activation/inactivation functions
         float sa_inf = powf(1 / (1 + expf((-30 - V[nid]) / 13.5)), 1/3);
@@ -119,8 +122,8 @@ class Photoreceptor(BaseNeuron):
         dri[nid] += dt*ddri;
         
         V[nid] /= 10000;
-				
-				//V[nid] = I[nid];
+	*/
+	V[nid] = I[nid];
 
     }
   }
@@ -242,7 +245,7 @@ class Photoreceptor(BaseNeuron):
     
         __global__ void transduction(int num_neurons, curandStateXORWOW_t *state, {{ type }}* photon_input, \
                                      int (*X)[NUM_MICROVILLI][7], {{ type }} ddt, {{ type }} (*I_micro)[NUM_MICROVILLI], \
-                                     {{ type }}* V_m) {
+                                     {{ type }}* V_m, {{type}} (*dt_micro)[NUM_MICROVILLI]) {
           int tid = blockIdx.x * NNEU + threadIdx.x;
           int mid = tid % NUM_MICROVILLI;
           int nid = tid / NUM_MICROVILLI;
@@ -261,7 +264,10 @@ class Photoreceptor(BaseNeuron):
 
             X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
     
-            while (t < t_end) {
+	    int steps = 0;
+	    float r1;
+	    while(t + dt_micro[nid][mid] < ddt && steps < 2000){
+              r1 = curand_uniform( & state[tid]);
               r2 = curand_uniform( & state[tid]);
               
               C_star_conc = X[nid][mid][5] / concentration_ratio;
@@ -296,26 +302,36 @@ class Photoreceptor(BaseNeuron):
 
               cumsum(a_mu, a);
               a_s = a_mu[11];
-              t += timestep;
+              //t += timestep;
+	      if(dt_micro[nid][mid] == 0) {
+		dt_micro[nid][mid] = 1/(la+a_s)*logf(1/r1);
+	    }
               
-              propensity = r2 * a_s;
-              int j, found = 0;
-              for (j = 0; j < 12; j++) {
-                if (a_mu[j] >= propensity && a_mu[j] != 0) {
-                  if (j == 0) {
-                    found = 1; break;
-                  } else if (a_mu[j - 1] < propensity) {
-                    found = 1; break;
-                  }
-                }
-              }
-    
-              if (found) {
-                for (int k = 0; k < 7; k++) {
-                  X[nid][mid][k] += V_state_transition[k][j];
-                }
-              }
-            }
+	      if(t + dt_micro[nid][mid] < ddt){
+		  propensity = r2 * a_s;
+		  int j, found = 0;
+		  for (j = 0; j < 12; j++) {
+		    if (a_mu[j] >= propensity && a_mu[j] != 0) {
+		      if (j == 0) {
+			found = 1; break;
+		      } else if (a_mu[j - 1] < propensity) {
+			found = 1; break;
+		      }
+		    }
+		  }
+	
+		  if (found) {
+		    for (int k = 0; k < 7; k++) {
+		      X[nid][mid][k] += V_state_transition[k][j];
+		    }
+		  }
+		  t += dt_micro[nid][mid];
+		  dt_micro[nid][mid] = 0;
+		}
+	    steps++;
+	    }
+
+	  dt_micro[nid][mid] -= ddt - t;
           }
         }
       }
@@ -333,6 +349,7 @@ class Photoreceptor(BaseNeuron):
                       np.intp,    # X
                       scalartype, # ddt
                       np.intp,    # I_micro
-                      np.intp])   # V_m
+		      np.intp,	  # V_m
+                      np.intp])   # dt_micro
 
         return func
