@@ -62,6 +62,7 @@ man.add_brok()
 (n_dict_lam, s_dict_lam) = LPU.lpu_parser('./data/lamina.gexf.gz')
 lpu_lam = LPU(dt, n_dict_lam, s_dict_lam,
               input_file='./data/vision_input.h5',
+              #input_file='../retina/create_input/retina_inputs.h5',
               output_file='lamina_output.h5', port_ctrl=port_ctrl,
               port_data=port_data, device=args.lam_dev, id='lamina')
 man.add_mod(lpu_lam)

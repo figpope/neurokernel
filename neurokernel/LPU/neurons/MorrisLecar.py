@@ -17,6 +17,10 @@ class MorrisLecar(BaseNeuron):
         self.ddt = dt / self.steps
 
         self.V = V
+	print self.num_neurons
+	print self.V
+	print n_dict['initV']
+	print np.asarray(n_dict['initV'],dtype=np.double)
 
         self.n = garray.to_gpu(np.asarray(n_dict['initn'], dtype=np.float64))
 
