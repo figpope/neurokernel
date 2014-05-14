@@ -25,17 +25,17 @@ class Photoreceptor(BaseNeuron):
 
         self.V = V
         
-        self.sa  = garray.to_gpu(np.asarray(n_dict['sa'], dtype=np.float64))
-        self.si  = garray.to_gpu(np.asarray(n_dict['si'], dtype=np.float64))
-        self.dra = garray.to_gpu(np.asarray(n_dict['dra'], dtype=np.float64))
-        self.dri = garray.to_gpu(np.asarray(n_dict['dri'], dtype=np.float64))
+        self.sa  = garray.to_gpu(np.asarray(n_dict['sa'], dtype=np.double))
+        self.si  = garray.to_gpu(np.asarray(n_dict['si'], dtype=np.double))
+        self.dra = garray.to_gpu(np.asarray(n_dict['dra'], dtype=np.double))
+        self.dri = garray.to_gpu(np.asarray(n_dict['dri'], dtype=np.double))
 
         X_init = [0,50,0,0,0,0,0]
         self.X = garray.to_gpu(np.asarray([[X_init for i in range(NUM_MICROVILLI)] for neuron in range(self.num_neurons)], dtype=np.int))
 
         self.I_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
 
-	self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.float32)))
+        self.dt_micro = garray.to_gpu(np.asarray(np.zeros([self.num_neurons, NUM_MICROVILLI], dtype=np.double)))
 
         cuda.memcpy_htod(int(self.V), np.asarray(n_dict['initV'], dtype=np.double))
 
@@ -90,8 +90,8 @@ class Photoreceptor(BaseNeuron):
           I[nid] += I_micro[nid][i];
         }
         float I_pre = I[nid] / m_V;
-			
-	/*
+      
+  /*
         // computing voltage gated time constants and steady-state
         // activation/inactivation functions
         float sa_inf = powf(1 / (1 + expf((-30 - V[nid]) / 13.5)), 1/3);
@@ -122,9 +122,8 @@ class Photoreceptor(BaseNeuron):
         dri[nid] += dt*ddri;
         
         V[nid] /= 10000;
-	*/
-	V[nid] = I[nid];
-
+  */
+  V[nid] = I[nid];
     }
   }
     """# Used 41 registers, 96 bytes cmem[0], 56 bytes cmem[16]
@@ -252,35 +251,28 @@ class Photoreceptor(BaseNeuron):
 
           if (tid < num_neurons * NUM_MICROVILLI) {
             float t = 0;
-            float timestep = 1e-4;
-            float t_end = t + ddt;
             double a_mu[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
             double a_s = 0;
             double a[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
             double propensity = 0;
-            float C_star_conc, CaM, CaM_conc, I_Ca, f_p, f_n, r2;
-            float Ca = 160e-6;
-						float g_trp = 0;
+            float C_star_conc, CaM, CaM_conc, Ca, I_Ca, f_p, f_n, r1, r2;
 
             X[nid][mid][0] += curand_poisson(&state[tid], photon_input[nid] / NUM_MICROVILLI);
     
-	    int steps = 0;
-	    float r1;
-	    while(t + dt_micro[nid][mid] < ddt && steps < 2000){
-              r1 = curand_uniform( & state[tid]);
-              r2 = curand_uniform( & state[tid]);
+            int steps = 0;
+            while(t + dt_micro[nid][mid] < ddt && steps < 2000){
+              r1 = curand_uniform(&state[tid]);
+              r2 = curand_uniform(&state[tid]);
               
               C_star_conc = X[nid][mid][5] / concentration_ratio;
               CaM = C_T - X[nid][mid][5];
               CaM_conc = CaM / concentration_ratio;
 
-              //I_micro[nid][mid] = I_T_star * X[nid][mid][6];
-							if(TRP_rev > V_m[nid])
-								g_trp = 8;
-							else
-								g_trp = 0;
-							I_micro[nid][mid] = X[nid][mid][6] * g_trp * (TRP_rev - V_m[nid]);
-
+              if(TRP_rev > V_m[nid])
+                I_micro[nid][mid] = X[nid][mid][6] * 8 * (TRP_rev - V_m[nid]);
+              else
+                I_micro[nid][mid] = 0;
+              
               I_Ca = 0.4 * I_micro[nid][mid];
               Ca = calc_Ca(C_star_conc, CaM_conc, I_Ca, V_m[nid]);
 
@@ -302,36 +294,34 @@ class Photoreceptor(BaseNeuron):
 
               cumsum(a_mu, a);
               a_s = a_mu[11];
-              //t += timestep;
-	      if(dt_micro[nid][mid] == 0) {
-		dt_micro[nid][mid] = 1/(la+a_s)*logf(1/r1);
-	    }
-              
-	      if(t + dt_micro[nid][mid] < ddt){
-		  propensity = r2 * a_s;
-		  int j, found = 0;
-		  for (j = 0; j < 12; j++) {
-		    if (a_mu[j] >= propensity && a_mu[j] != 0) {
-		      if (j == 0) {
-			found = 1; break;
-		      } else if (a_mu[j - 1] < propensity) {
-			found = 1; break;
-		      }
-		    }
-		  }
-	
-		  if (found) {
-		    for (int k = 0; k < 7; k++) {
-		      X[nid][mid][k] += V_state_transition[k][j];
-		    }
-		  }
-		  t += dt_micro[nid][mid];
-		  dt_micro[nid][mid] = 0;
-		}
-	    steps++;
-	    }
-
-	  dt_micro[nid][mid] -= ddt - t;
+              if(dt_micro[nid][mid] == 0) {
+                dt_micro[nid][mid] = 1/(la+a_s)*logf(1/r1);
+              }
+                    
+              if(t + dt_micro[nid][mid] < ddt){
+                propensity = r2 * a_s;
+                int j, found = 0;
+                for (j = 0; j < 12; j++) {
+                  if (a_mu[j] >= propensity && a_mu[j] != 0) {
+                    if (j == 0) {
+                      found = 1; break;
+                    } else if (a_mu[j - 1] < propensity) {
+                      found = 1; break;
+                    }
+                  }
+                }
+        
+                if (found) {
+                  for (int k = 0; k < 7; k++) {
+                    X[nid][mid][k] += V_state_transition[k][j];
+                  }
+                }
+                t += dt_micro[nid][mid];
+                dt_micro[nid][mid] = 0;
+              }
+              steps++;
+            }
+          dt_micro[nid][mid] -= ddt - t;
           }
         }
       }
@@ -349,7 +339,7 @@ class Photoreceptor(BaseNeuron):
                       np.intp,    # X
                       scalartype, # ddt
                       np.intp,    # I_micro
-		      np.intp,	  # V_m
+                      np.intp,    # V_m
                       np.intp])   # dt_micro
 
         return func
