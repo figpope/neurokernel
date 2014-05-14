@@ -121,6 +121,8 @@ class vision_LPU(object):
                   np.dtype(np.double), np.dtype(np.double),
                   np.dtype(np.double), np.dtype(np.double),
                   np.dtype(np.double), np.dtype(np.double),
+                  np.dtype(np.double), np.dtype(np.double),
+                  np.dtype(np.double), np.dtype(np.double),
                   np.dtype(np.double), np.dtype(np.double)]
     
         with open(self.neuron_csv, 'rU') as csvfile:

@@ -10,7 +10,7 @@ from neurokernel.LPU.utils.curand import curand_setup
 import tables
 from jinja2 import Template
 
-NUM_MICROVILLI = 1000
+NUM_MICROVILLI = 30000
 
 class Photoreceptor(BaseNeuron):
     def __init__(self, n_dict, V, dt , debug=False, LPU_id=None):
@@ -91,7 +91,7 @@ class Photoreceptor(BaseNeuron):
         }
         float I_pre = I[nid] / m_V;
       
-  /*
+  
         // computing voltage gated time constants and steady-state
         // activation/inactivation functions
         float sa_inf = powf(1 / (1 + expf((-30 - V[nid]) / 13.5)), 1/3);
@@ -122,8 +122,8 @@ class Photoreceptor(BaseNeuron):
         dri[nid] += dt*ddri;
         
         V[nid] /= 10000;
-  */
-  V[nid] = I[nid];
+  
+  //V[nid] = I[nid];
     }
   }
     """# Used 41 registers, 96 bytes cmem[0], 56 bytes cmem[16]
