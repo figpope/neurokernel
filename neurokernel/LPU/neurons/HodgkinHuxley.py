@@ -8,6 +8,7 @@ from pycuda.compiler import SourceModule
 
 class HodgkinHuxley(BaseNeuron):
     def __init__(self, n_dict, spk, dt , debug=False, LPU_id=None):
+        self.num_neurons = len(n_dict['id'])
         super(HodgkinHuxley, self).__init__(n_dict, spk, dt, debug, LPU_id)
         self.dt = np.double(dt)
         self.steps = 1
@@ -27,7 +28,7 @@ class HodgkinHuxley(BaseNeuron):
 
     def eval(self, st = None):
         self.update.prepared_async_call(self.update_grid, self.update_block, st, self.spk, 
-                                        self._num_neurons, self.I.gpudata, self.dt*1000, 
+                                        self.num_neurons, self.I.gpudata, self.dt*1000, 
                                         self.X_1.gpudata, self.X_2.gpudata, self.X_3.gpudata, 
                                         self.V.gpudata, self.V_prev.gpudata)
 
@@ -82,7 +83,7 @@ class HodgkinHuxley(BaseNeuron):
         dtype = np.double
         scalartype = dtype.type if dtype.__class__ is np.dtype else dtype
         self.update_block = (128,1,1)
-        self.update_grid = ((self._num_neurons - 1) / 128 + 1, 1)
+        self.update_grid = ((self.num_neurons - 1) / 128 + 1, 1)
         mod = SourceModule(template % {"type": dtype_to_ctype(dtype),  "nneu": self.update_block[0]}, options=["--ptxas-options=-v"])
         func = mod.get_function("hhn_model")
 
