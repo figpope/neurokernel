@@ -15,8 +15,8 @@ nx.readwrite.gexf.GEXF.convert_bool = {'false':False, 'False':False,
 
 V = vis.visualizer()
 
-ncols = 32
-nrows = 24
+ncols = 4
+nrows = 3
 
 conf_input = {}
 conf_input['type'] = 'image'
