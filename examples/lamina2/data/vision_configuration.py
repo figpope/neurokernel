@@ -469,7 +469,7 @@ class Cartridge(object):
 class Neuron(object):
     def __init__(self, param_dict):
         self.params = param_dict.copy()
-        if self.params['model'] == 'MorrisLecar':
+        if self.params['model'] == 'MorrisLecar' or self.params['model'] == 'Photoreceptor':
             spiking = False
         else:
             spiking = True
